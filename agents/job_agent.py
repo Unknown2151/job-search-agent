@@ -4,10 +4,13 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.prompts import PromptTemplate
 from langchain.tools import Tool
+from langchain.memory import ConversationBufferWindowMemory
 import logging
+
 
 from tools.linkedin_search_tool import search_linkedin_jobs
 from tools.naukri_search_tool import search_naukri_jobs
+from tools.company_research_tool import research_company
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
@@ -15,6 +18,7 @@ logger = logging.getLogger(__name__)
 # --- Configuration Constants ---
 LLM_MODEL = "gpt-4o-mini"
 LLM_TEMPERATURE = 0.0
+MEMORY_WINDOW_SIZE = 4
 
 
 def create_job_agent():
@@ -39,33 +43,49 @@ def create_job_agent():
             name="naukri_job_search",
             func=search_naukri_jobs,
             description="Use this to search for jobs on Naukri.com. The input must be a single string containing the job role and location, separated by a comma. For example: 'Data Scientist, Chennai'"
+        ),
+        Tool(
+            name="company_researcher",
+            func=research_company,
+            description="Use this tool to research a specific company. The input should be the company's name. This provides a summary of what the company does."
         )
     ]
     logger.info(f"Agent tools defined: {[tool.name for tool in tools]}")
 
     # 3. Create the prompt template (the agent's "instructions")
     template = """
-    Answer the following questions as best you can. You have access to the following tools:
+        You are a helpful job search assistant. Answer the following questions as best you can.
+        You have access to the following tools:
+        {tools}
 
-    {tools}
+        Use the following format:
+        Question: the input question you must answer
+        Thought: you should always think about what to do
+        Action: the action to take, should be one of [{tool_names}]
+        Action Input: the input to the action
+        Observation: the result of the action
+        ... (this Thought/Action/Action Input/Observation can repeat N times)
+        Thought: I now know the final answer
+        Final Answer: the final answer to the original input question
 
-    Use the following format:
+        Begin!
 
-    Question: the input question you must answer
-    Thought: you should always think about what to do
-    Action: the action to take, should be one of [{tool_names}]
-    Action Input: the input to the action
-    Observation: the result of the action
-    ... (this Thought/Action/Action Input/Observation can repeat N times)
-    Thought: I now know the final answer
-    Final Answer: the final answer to the original input question
+        Previous conversation history:
+        {chat_history}
 
-    Begin!
-
-    Question: {input}
-    Thought:{agent_scratchpad}
-    """
+        New question: {input}
+        {agent_scratchpad}
+        """
     prompt = PromptTemplate.from_template(template)
+
+    # Initialize Memory
+    memory = ConversationBufferWindowMemory(
+        k=MEMORY_WINDOW_SIZE,
+        memory_key='chat_history',
+        input_key='input',
+        output_key='output',
+        return_messages=True  # Important for the prompt
+    )
 
     # 4. Create the agent itself
     agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
@@ -74,6 +94,7 @@ def create_job_agent():
     agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,
+        memory=memory,
         verbose=True,
         handle_parsing_errors=True  # Gracefully handle if the LLM messes up formatting
     )
