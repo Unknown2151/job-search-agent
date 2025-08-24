@@ -41,20 +41,22 @@ if prompt := st.chat_input("Ask me to find jobs, internships, or research a comp
 
     with st.chat_message("assistant"):
         response = ""
-        with st.status("The agent is thinking...", expanded=True) as status:
+        response_placeholder = st.empty()
+
+        with st.spinner("🤖 The agent is thinking..."):
             try:
-                result = st.session_state.agent_executor.invoke(
-                    {"input": prompt},
-                    {"callbacks": [status]}
+                stream = st.session_state.agent_executor.stream(
+                    {"input": prompt}
                 )
-                response = result['output']
-                status.update(label="Task complete!", state="complete", expanded=False)
+                for chunk in stream:
+                    if 'output' in chunk:
+                        response = chunk['output']
+
             except Exception as e:
                 response = "Sorry, I ran into a critical error. Please check the logs."
                 st.error(response)
                 logging.error("Error during agent execution", exc_info=True)
-                status.update(label="Error", state="error", expanded=False)
 
-        st.markdown(response)
+        response_placeholder.markdown(response, unsafe_allow_html=True)
 
     st.session_state.messages.append({"role": "assistant", "content": response})

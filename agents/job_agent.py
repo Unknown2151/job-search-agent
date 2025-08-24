@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.prompts import PromptTemplate
 from langchain.tools import Tool
@@ -16,7 +17,8 @@ from tools.company_research_tool import research_company
 logger = logging.getLogger(__name__)
 
 # --- Configuration Constants ---
-LLM_MODEL = "gpt-4o-mini"
+LLM_MODEL = "gemini-1.5-flash"
+# LLM_MODEL = "gpt-4o-mini"
 LLM_TEMPERATURE = 0.0
 MEMORY_WINDOW_SIZE = 4
 
@@ -29,7 +31,8 @@ def create_job_agent():
     load_dotenv()
 
     # 1. Initialize the LLM (the "brain")
-    llm = ChatOpenAI(temperature=LLM_TEMPERATURE, model_name=LLM_MODEL)
+    # llm = ChatOpenAI(temperature=LLM_TEMPERATURE, model_name=LLM_MODEL)
+    llm = ChatGoogleGenerativeAI(temperature=LLM_TEMPERATURE, model=LLM_MODEL, convert_system_message_to_human=True)
     logger.info(f"LLM initialized with model: {LLM_MODEL}")
 
     # 2. Define the tools the agent can use
@@ -54,27 +57,33 @@ def create_job_agent():
 
     # 3. Create the prompt template (the agent's "instructions")
     template = """
-        You are a helpful job search assistant. Answer the following questions as best you can.
-        You have access to the following tools:
-        {tools}
+        You are a helpful and proactive job search assistant. Your goal is to find relevant job opportunities for the user.
+    You have access to the following tools:
+    {tools}
 
-        Use the following format:
-        Question: the input question you must answer
-        Thought: you should always think about what to do
-        Action: the action to take, should be one of [{tool_names}]
-        Action Input: the input to the action
-        Observation: the result of the action
-        ... (this Thought/Action/Action Input/Observation can repeat N times)
-        Thought: I now know the final answer
-        Final Answer: the final answer to the original input question
+    Use the following format:
+    Question: the input question you must answer
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [{tool_names}]
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the final answer
+    Final Answer: the final answer to the original input question
 
-        Begin!
+    Begin!
 
-        Previous conversation history:
-        {chat_history}
+    ### IMPORTANT INSTRUCTIONS ###
+    1. Always be polite and helpful.
+    2. If a search tool returns a list of jobs, first provide a brief summary.
+    3. After the summary, present the jobs as a clear, markdown-formatted list. Each item should have the title, company, and a clickable URL. For example: - **Software Engineer** at Tech Corp - [Apply Here](https://example.com/job1)
+    4. If a tool returns "No jobs found for this query.", suggest a helpful alternative search.
 
-        New question: {input}
-        {agent_scratchpad}
+    Previous conversation history:
+    {chat_history}
+
+    New question: {input}
+    {agent_scratchpad}
         """
     prompt = PromptTemplate.from_template(template)
 

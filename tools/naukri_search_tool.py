@@ -58,7 +58,7 @@ def search_naukri_jobs(query: str) -> list[dict] | str:
 
         if not job_elements:
             logger.warning("No job elements found on Naukri.com. The page structure may have changed.")
-            return []
+            return "No Jobs found for this query."
 
         jobs = []
         for job_element in job_elements:
@@ -74,7 +74,7 @@ def search_naukri_jobs(query: str) -> list[dict] | str:
                 })
 
         logger.info(f"Found {len(jobs)} jobs on Naukri.com.")
-        return jobs
+        return jobs if jobs else "No Jobs found for this query."
     except Exception as e:
         logger.error(f"An unexpected error occurred during Naukri.com search: {e}", exc_info=True)
         return f"An unexpected error occurred: {e}"

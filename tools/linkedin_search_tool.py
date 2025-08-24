@@ -39,7 +39,7 @@ def search_linkedin_jobs(query: str) -> list[dict] | str:
 
         if not job_cards:
             logger.warning("No job cards found on LinkedIn. The page structure may have changed.")
-            return []
+            return "No Jobs found for this query."
 
         jobs = []
         for card in job_cards:
@@ -56,7 +56,7 @@ def search_linkedin_jobs(query: str) -> list[dict] | str:
                 })
 
         logger.info(f"Found {len(jobs)} jobs on LinkedIn.")
-        return jobs
+        return jobs if jobs else "No Jobs found for this query."
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Network error during LinkedIn search: {e}")
