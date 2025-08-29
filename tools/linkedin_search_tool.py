@@ -43,6 +43,8 @@ def search_linkedin_jobs(query: str) -> list[dict] | str:
 
         jobs = []
         for card in job_cards:
+            if len(jobs) >= 10:
+                break
             title_element = card.find('h3', class_='base-search-card__title')
             company_element = card.find('h4', class_='base-search-card__subtitle')
             url_element = card.find('a', class_='base-card__full-link')

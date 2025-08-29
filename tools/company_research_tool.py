@@ -4,6 +4,7 @@ from serpapi import GoogleSearch
 from newspaper import Article, ArticleException
 import logging
 
+# Set up a logger for this module
 logger = logging.getLogger(__name__)
 
 def research_company(company_name: str) -> str:

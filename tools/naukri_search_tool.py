@@ -62,6 +62,8 @@ def search_naukri_jobs(query: str) -> list[dict] | str:
 
         jobs = []
         for job_element in job_elements:
+            if len(jobs) >= 10:
+                break
             title_element = job_element.find('a', class_='title')
             company_element = job_element.find('a', class_='comp-name')
 

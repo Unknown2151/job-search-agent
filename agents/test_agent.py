@@ -5,23 +5,29 @@ if __name__ == '__main__':
 
     # Loop to allow for multiple queries
     while True:
-        # Prompt the user for their goal dynamically
-        user_goal = input("What is your career goal today? (or type 'exit' to quit): ")
+        try:
+            # Prompt the user for their goal dynamically
+            user_goal = input("What is your career goal today? (or type 'exit' to quit): ")
 
-        # Check if the user wants to quit
-        if user_goal.lower() == 'exit':
-            print("Goodbye!")
-            break
+            # Check if the user wants to quit
+            if user_goal.lower() == 'exit':
+                print("Goodbye!")
+                break
 
-        # Make sure the user entered something
-        if user_goal.strip():
-            print(f"\n--- AGENT GOAL: {user_goal}  ---")
+            # Make sure the user entered something
+            if user_goal.strip():
+                print(f"\n--- AGENT GOAL: {user_goal}  ---")
 
-            # Run the agent with the user's dynamic goal
-            result = agent_executor.invoke({"input": user_goal})
+                # Run the agent with the user's dynamic goal
+                result = agent_executor.invoke({"input": user_goal})
 
-            print("\n---AGENT'S FINAL ANSWER---")
-            print(result['output'])
-            print("\n" + "=" * 50 + "\n")
-        else:
-            print("Please enter a valid goal.")
+                print("\n---AGENT'S FINAL ANSWER---")
+                print(result['output'])
+                print("\n" + "=" * 50 + "\n")
+            else:
+                print("Please enter a valid goal.")
+
+        except Exception as e:
+            print(f"\nAn error occurred: {e}")
+            print("Restarting the conversation loop.")
+            continue
