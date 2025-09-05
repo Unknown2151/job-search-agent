@@ -1,9 +1,11 @@
+import pandas as pd
+import plotly.express as px
 import streamlit as st
 import logging
 import json
 import re
 import time
-from agents.job_agent import create_job_agent
+from agents.job_agent import create_job_agent, SEARCH_ANALYTICS_DATA
 
 # --- CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -106,6 +108,9 @@ def extract_and_format_response(response_text: str):
 # --- PROCESS USER PROMPT ---
 def process_user_prompt(prompt):
     """Processes the user's input, runs the agent, and handles the response."""
+
+    SEARCH_ANALYTICS_DATA["total_searches"] += 1
+
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -167,6 +172,31 @@ def process_user_prompt(prompt):
     st.rerun()
 
 
+def analytics_dashboard():
+    st.header("📊 Analytics Dashboard")
+    st.markdown("Insights into your job search activity.")
+
+    analytics_data = SEARCH_ANALYTICS_DATA
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Searches", analytics_data["total_searches"])
+    col2.metric("Successful Searches", analytics_data["successful_searches"])
+    col3.metric("Failed Searches", analytics_data["failed_searches"])
+
+    st.divider()
+
+    platform_data = analytics_data["platform_usage"]
+    if sum(platform_data.values()) > 0:
+        df = pd.DataFrame(list(platform_data.items()), columns=['Platform', 'Searches'])
+
+        fig = px.pie(df, names='Platform', values='Searches', title='Job Searches by Platform',
+                     color_discrete_sequence=px.colors.sequential.RdBu)
+        fig.update_layout(legend_title_text='Platforms')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No platform search data yet. Ask the agent to find some jobs!")
+
+
 # --- MAIN APP LOGIC ---
 def main():
     """The main function that runs the Streamlit application."""
@@ -183,10 +213,17 @@ def main():
         ]
 
     handle_resume_upload()
-    display_chat_messages()
 
-    if prompt := st.chat_input("Ask me to find jobs..."):
-        process_user_prompt(prompt)
+    tab1, tab2 = st.tabs(["💬 Chat Agent", "📊 Analytics"])
+
+    with tab1:
+        st.header("Chat with your AI Job Agent")
+        display_chat_messages()
+        if prompt := st.chat_input("Ask me to find jobs..."):
+            process_user_prompt(prompt)
+
+    with tab2:
+        analytics_dashboard()
 
 
 if __name__ == "__main__":

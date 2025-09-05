@@ -12,7 +12,21 @@ from tools.naukri_search_tool import search_naukri_jobs
 from tools.company_research_tool import research_company
 from tools.application_tracker_tool import save_jobs_to_notion
 
+SEARCH_ANALYTICS_DATA = {
+    "total_searches": 0,
+    "platform_usage": {"linkedin": 0, "naukri": 0},
+    "successful_searches": 0,
+    "failed_searches": 0,
+}
+
 logger = logging.getLogger(__name__)
+
+def get_search_analytics(query: str) -> dict:
+    """Returns the current search analytics data."""
+    logger.info("Fetching search analytics.")
+    # In a real system, this would be calculated from a persistent log or database
+    # For this project, we'll use a simple in-memory dictionary
+    return SEARCH_ANALYTICS_DATA
 
 def create_job_agent() -> AgentExecutor:
     """Creates and returns the job search agent."""
@@ -39,6 +53,11 @@ def create_job_agent() -> AgentExecutor:
             name="application_tracker",
             func=save_jobs_to_notion,
             description="Use this tool to save jobs to a Notion database..."
+        ),
+        Tool(
+            name="get_search_analytics",
+            func=get_search_analytics,
+            description="Use this to get analytics about the job search history and performance."
         )
     ]
     prompt = PromptTemplate.from_template(
