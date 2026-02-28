@@ -1,16 +1,27 @@
 import requests
 from bs4 import BeautifulSoup
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def search_indeed_jobs(role: str, location: str) -> list[dict]:
-    """Searches for jobs on Indeed."""
-    print(f"INFO: Searching Indeed for '{role}' in '{location}'...")
+    """Searches for jobs on Indeed.
+
+    Args:
+        role: The job role to search for.
+        location: The location to search in.
+
+    Returns:
+        A list of job dictionaries, or an empty list on failure.
+    """
+    logger.info(f"Searching Indeed for '{role}' in '{location}'...")
     url = f"https://in.indeed.com/jobs?q={role.replace(' ', '+')}&l={location.replace(' ', '+')}"
 
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -29,8 +40,8 @@ def search_indeed_jobs(role: str, location: str) -> list[dict]:
                     "company": company_element.text.strip(),
                     "url": job_url
                 })
-        print(f"INFO: Found {len(jobs)} jobs on Indeed.")
+        logger.info(f"Found {len(jobs)} jobs on Indeed.")
         return jobs
     except Exception as e:
-        print(f"ERROR (Indeed): {e}")
+        logger.error(f"Indeed search failed: {e}", exc_info=True)
         return []

@@ -2,15 +2,51 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
 
 # Virtual environment
 .venv/
 venv/
 ENV/
+env/
 
-# Secrets
-.env*
+# Secrets & Environment variables
+.env
+.env.*
+!.env.example
 
 # IDE / Editor specific
 .idea/
 .vscode/
+.cursor/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# SQLite databases (runtime-generated)
+*.db
+*.db-shm
+*.db-wal
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Testing & Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+.mypy_cache/
+
+# Logs
+*.log
+
+# WebDriver cache
+.wdm/

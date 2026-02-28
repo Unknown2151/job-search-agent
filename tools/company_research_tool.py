@@ -1,11 +1,12 @@
 import os
-import requests
 from serpapi import GoogleSearch
 from newspaper import Article, ArticleException
 import logging
+from typing import Optional
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
+
 
 def research_company(company_name: str) -> str:
     """
@@ -20,22 +21,32 @@ def research_company(company_name: str) -> str:
     """
     logger.info(f"Starting research for company: {company_name}")
 
+    api_key = os.getenv("SERPAPI_API_KEY")
+    if not api_key:
+        logger.error("SERPAPI_API_KEY is not set in the environment.")
+        return "Configuration error: SERPAPI_API_KEY is not set. Please configure it in your environment."
+
     # 1. Search for the company on Google using SerpApi
     try:
         search_params = {
             "q": f"{company_name} company profile",
             "engine": "google",
-            "api_key": os.getenv("SERPAPI_API_KEY")
+            "api_key": api_key,
         }
         search = GoogleSearch(search_params)
         results = search.get_dict()
 
-        if "organic_results" not in results or not results["organic_results"]:
+        organic_results = results.get("organic_results") or []
+        if not organic_results:
             logger.warning(f"No organic results found for {company_name}")
             return f"Sorry, I could not find any search results for {company_name}."
 
         # Get the URL of the top search result
-        top_result_url = results["organic_results"][0]['link']
+        top_result_url: Optional[str] = organic_results[0].get("link")
+        if not top_result_url:
+            logger.warning("Top organic result did not contain a link.")
+            return "Sorry, I found a search result but it did not contain a usable link."
+
         logger.info(f"Found top result URL: {top_result_url}")
 
     except Exception as e:
@@ -60,4 +71,4 @@ def research_company(company_name: str) -> str:
         return f"Sorry, I could not read the content from the found page. {e}"
     except Exception as e:
         logger.error(f"An unexpected error occurred during article processing: {e}", exc_info=True)
-        return f"An unexpected error occurred while processing the company information."
+        return "An unexpected error occurred while processing the company information."

@@ -1,4 +1,5 @@
 import json
+import asyncio
 from tools.linkedin_search_tool import search_linkedin_jobs
 from tools.naukri_search_tool import search_naukri_jobs
 from tools.indeed_search_tool import search_indeed_jobs
@@ -11,16 +12,22 @@ if __name__ == "__main__":
 
     # --- LinkedIn ---
     print("--- Searching LinkedIn... ---")
-    linkedin_jobs = search_linkedin_jobs(role=target_role, location=target_location)
-    if linkedin_jobs:
-        print(json.dumps(linkedin_jobs[:3], indent=2)) # Print first 3 results
+    # search_linkedin_jobs is async and expects a single comma-separated string
+    linkedin_jobs = asyncio.run(search_linkedin_jobs(f"{target_role}, {target_location}"))
+    if isinstance(linkedin_jobs, list) and linkedin_jobs:
+        print(json.dumps(linkedin_jobs[:3], indent=2))  # Print first 3 results
+    else:
+        print(f"LinkedIn result: {linkedin_jobs}")
     print("-" * 30 + "\n")
 
     # --- Naukri.com ---
     print("--- Searching Naukri.com... ---")
-    naukri_jobs = search_naukri_jobs(role=target_role, location=target_location)
-    if naukri_jobs:
+    # search_naukri_jobs expects a single comma-separated string
+    naukri_jobs = search_naukri_jobs(f"{target_role}, {target_location}")
+    if isinstance(naukri_jobs, list) and naukri_jobs:
         print(json.dumps(naukri_jobs[:3], indent=2))
+    else:
+        print(f"Naukri result: {naukri_jobs}")
     print("-" * 30 + "\n")
 
     # --- Indeed ---

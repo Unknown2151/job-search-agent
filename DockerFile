@@ -1,22 +1,45 @@
-# Use an official lightweight Python image as a parent image
 FROM python:3.11-slim
 
-# Set the working directory in the container to /app
+# Install system dependencies for Chrome, ChromeDriver, and Selenium
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    unzip \
+    curl \
+    libgconf-2-4 \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils \
+    --no-install-recommends \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' \
+    && apt-get update && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ChromeDriver compatible with the installed Chrome version
+RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1) && \
+    echo "Detected Chrome major version: ${CHROME_VERSION}" && \
+    wget -q -O /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROME_VERSION}.0.0.0/linux64/chromedriver-linux64.zip" || \
+    wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}.0.0.0/linux64/chromedriver-linux64.zip" && \
+    unzip /tmp/chromedriver.zip -d /tmp/chromedriver && \
+    mv /tmp/chromedriver/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
+    chmod +x /usr/local/bin/chromedriver && \
+    rm -rf /tmp/chromedriver /tmp/chromedriver.zip
+
+ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
+
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
+# Leverage Docker cache for requirements
 COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
-# --no-cache-dir makes the image smaller
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code into the container at /app
+# Copy application code
 COPY . .
 
-# Make port 8501 available to the world outside this container (Streamlit's default port)
 EXPOSE 8501
 
-# Define the command to run your app using streamlit
-# This will be executed when the container starts
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

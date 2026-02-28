@@ -25,30 +25,42 @@ def save_jobs_to_notion(jobs_json: str) -> str:
         if not notion_token or not database_id:
             raise ValueError("NOTION_API_TOKEN and NOTION_DATABASE_ID must be set in the .env file.")
 
+        # Format database_id: remove hyphens for Notion API
+        database_id = database_id.replace("-", "")
+
         jobs_to_save = json.loads(jobs_json)
         if not isinstance(jobs_to_save, list) or not jobs_to_save:
             return "No jobs were selected to be saved."
 
         notion = Client(auth=notion_token)
         saved_count = 0
+        failed_jobs = []
 
-        for job in jobs_to_save:
-            title = job.get('title', 'N/A')
-            company = job.get('company', 'N/A')
-            url = job.get('url', '#')
+        for i, job in enumerate(jobs_to_save):
+            try:
+                title = job.get('title', 'N/A')
+                company = job.get('company', 'N/A')
+                url = job.get('url', '#')
 
-            # Create a new page in the Notion database
-            notion.pages.create(
-                parent={"database_id": database_id},
-                properties={
-                    "Name": {"title": [{"text": {"content": f"{title} at {company}"}}]},
-                    "URL": {"url": url},
-                    "Status": {"select": {"name": "Saved"}}
-                }
-            )
-            saved_count += 1
+                # Create a new page in the Notion database
+                notion.pages.create(
+                    parent={"database_id": database_id},
+                    properties={
+                        "Name": {"title": [{"text": {"content": f"{title} at {company}"}}]},
+                        "URL": {"url": url},
+                        "Status": {"select": {"name": "Saved"}}
+                    }
+                )
+                saved_count += 1
+            except Exception as job_error:
+                logger.warning(f"Failed to save job {i+1}: {job_error}")
+                failed_jobs.append(f"{job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
 
-        success_message = f"Successfully saved {saved_count} job(s) to your Notion database."
+        if failed_jobs:
+            success_message = f"Saved {saved_count} of {len(jobs_to_save)} job(s). Failed: {', '.join(failed_jobs)}"
+        else:
+            success_message = f"Successfully saved {saved_count} job(s) to your Notion database."
+
         logger.info(success_message)
         return success_message
 
