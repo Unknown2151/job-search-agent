@@ -1,114 +1,95 @@
 import logging
 import sqlite3
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, Annotated, Any
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph.message import add_messages
 
 from agents.job_agent import create_job_agent
 
 logger = logging.getLogger(__name__)
-
 load_dotenv()
 
 
 class ConversationState(TypedDict):
     """
     State schema for the LangGraph-based persistent conversation.
-
-    This graph treats the existing LangChain AgentExecutor as a black box and
-    focuses on persisting high-level question/answer pairs to SQLite so that
-    they can be recovered across sessions.
+    By using 'add_messages', SQLite will now maintain a continuous log of
+    Tool Calls, JSON data, and Agent responses. No more amnesia!
     """
-
     input: str
     resume_context: str
     response: str
+    messages: Annotated[list[Any], add_messages]
 
 
-# Lazy-initialized shared agent instance (created on first use, not at import time).
 _agent_executor = None
 
 
 def _get_agent_executor():
-    """Get or create the shared agent executor (lazy initialization)."""
     global _agent_executor
     if _agent_executor is None:
         _agent_executor = create_job_agent()
     return _agent_executor
 
 
-def _run_agent(state: ConversationState) -> ConversationState:
-    """
-    Node that calls the existing agent and records its final response.
-
-    This wraps the agent so that LangGraph can checkpoint the input and output.
-    """
+def _run_agent(state: ConversationState) -> dict:
     user_input = state.get("input", "")
     resume_context = state.get("resume_context", "")
+    history = state.get("messages", [])
 
     logger.info("LangGraph node invoking agent for persistent run.")
 
-    # Combine input with resume context for better agent performance
     full_input = user_input
-    if resume_context:
+    if resume_context and len(history) == 0:
         full_input = f"(Resume Context: {resume_context})\n\n{user_input}"
 
-    # Invoke the agent with the new message format
+    new_user_msg = HumanMessage(content=full_input)
+
+    messages_to_pass = history + [new_user_msg]
+
     try:
-        result = _get_agent_executor().invoke(
-            {"messages": [HumanMessage(content=full_input)]}
-        )
-        
-        # Extract response from the new format
-        output_text = ""
+        result = _get_agent_executor().invoke({"messages": messages_to_pass})
+
+        output_text = "Agent completed but returned no response."
+        new_msgs = []
+
         if isinstance(result, dict) and "messages" in result:
-            messages = result["messages"]
-            if messages:
-                last_message = messages[-1]
+            returned_messages = result["messages"]
+
+            new_msgs = returned_messages[len(history):]
+
+            if new_msgs:
+                last_message = new_msgs[-1]
                 if hasattr(last_message, 'content'):
                     content = last_message.content
-                    # Handle list format (Gemini)
                     if isinstance(content, list):
-                        text_parts = []
-                        for block in content:
-                            if isinstance(block, dict) and 'text' in block:
-                                text_parts.append(block['text'])
-                            elif isinstance(block, str):
-                                text_parts.append(block)
+                        text_parts = [block['text'] for block in content if isinstance(block, dict) and 'text' in block]
                         output_text = '\n'.join(text_parts)
                     else:
                         output_text = str(content)
-        
-        if not output_text:
-            output_text = "Agent completed but returned no response."
-            
+
     except Exception as exc:
         logger.error("Agent invocation failed: %s", exc, exc_info=True)
         output_text = "Sorry, an internal error occurred while processing your request."
+        new_msgs = [new_user_msg]  # At least save the user's attempt
 
     return {
         "input": user_input,
         "resume_context": resume_context,
         "response": output_text,
+        "messages": new_msgs
     }
 
 
 def _build_persistent_graph(db_path: str = "job_agent_langgraph.db"):
-    """
-    Build and compile the LangGraph StateGraph with a SQLite checkpointer.
-    
-    Note: check_same_thread=False is safe here because we control all SQLite access
-    and this is a local app (not a production multi-threaded server).
-    """
     builder = StateGraph(ConversationState)
     builder.add_node("agent", _run_agent)
     builder.set_entry_point("agent")
 
-    # Create checkpointer with check_same_thread=False to handle Streamlit's threading
-    # This is safe for local apps where we control all database access
     conn = sqlite3.connect(db_path, check_same_thread=False)
     checkpointer = SqliteSaver(conn=conn)
     graph = builder.compile(checkpointer=checkpointer)
@@ -116,12 +97,4 @@ def _build_persistent_graph(db_path: str = "job_agent_langgraph.db"):
 
 
 def get_persistent_graph():
-    """
-    Returns a compiled LangGraph graph with SQLite-backed persistence.
-
-    The caller is responsible for passing a stable `thread_id` via the
-    LangGraph `config={"configurable": {"thread_id": ...}}` mechanism so that
-    conversations can be resumed across sessions.
-    """
     return _build_persistent_graph()
-

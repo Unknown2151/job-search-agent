@@ -30,7 +30,6 @@ def check_api_keys() -> Tuple[Dict[str, bool], List[str]]:
     missing_required = []
     missing_optional = []
 
-    # Check required APIs
     for api_key, description in required_apis.items():
         is_set = bool(os.getenv(api_key))
         configured[api_key] = is_set
@@ -39,7 +38,6 @@ def check_api_keys() -> Tuple[Dict[str, bool], List[str]]:
         else:
             logger.info(f"✓ {api_key} configured")
 
-    # Check optional APIs
     for api_key, description in optional_apis.items():
         is_set = bool(os.getenv(api_key))
         configured[api_key] = is_set
@@ -57,9 +55,9 @@ def get_diagnostic_message() -> str:
     configured, missing = check_api_keys()
 
     if not missing:
-        return "✅ All required APIs are configured!"
+        return "All required APIs are configured!"
 
-    message = "⚠️ **Missing API Configurations**\n\n"
+    message = "**Missing API Configurations**\n\n"
     message += "The following API keys are not configured:\n\n"
 
     for item in missing:

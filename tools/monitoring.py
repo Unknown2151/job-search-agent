@@ -54,7 +54,6 @@ class PerformanceMonitor:
         )
         self.metrics.append(metric)
 
-        # Update consecutive failure counter
         if success:
             self.consecutive_failures = 0
             logger.info(f"Search succeeded: {platform} for '{query}' took {duration_seconds:.2f}s")
@@ -65,7 +64,6 @@ class PerformanceMonitor:
                 f"Error: {error_message}"
             )
 
-        # Check for anomalies
         self._check_anomalies()
 
     def _check_anomalies(self) -> None:
@@ -79,7 +77,6 @@ class PerformanceMonitor:
                 )
                 self.last_alert["consecutive_failures"] = datetime.now()
 
-        # Check failure rate
         if len(self.metrics) >= 10:
             recent_metrics = list(self.metrics)[-10:]
             failure_rate = sum(1 for m in recent_metrics if not m.success) / len(recent_metrics)
@@ -92,13 +89,12 @@ class PerformanceMonitor:
                     )
                     self.last_alert["failure_rate"] = datetime.now()
 
-        # Check slow searches
         if len(self.metrics) >= 5:
             recent_metrics = list(self.metrics)[-5:]
             avg_duration = sum(m.duration_seconds for m in recent_metrics) / len(recent_metrics)
             max_duration = max(m.duration_seconds for m in recent_metrics)
 
-            if max_duration > 60:  # Searches taking > 60 seconds
+            if max_duration > 60:
                 if not self._should_throttle_alert("slow_searches"):
                     logger.warning(
                         f"ALERT: Slow searches detected. Max: {max_duration:.2f}s, "
@@ -154,7 +150,6 @@ class PerformanceMonitor:
             else:
                 stats[metric.platform]["failed"] += 1
 
-        # Add success rates
         for platform, data in stats.items():
             total = data["successful"] + data["failed"]
             data["success_rate"] = data["successful"] / total if total > 0 else 0
@@ -162,7 +157,6 @@ class PerformanceMonitor:
         return stats
 
 
-# Global monitor instance
 _monitor: Optional[PerformanceMonitor] = None
 
 

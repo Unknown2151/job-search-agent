@@ -7,17 +7,20 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import Tool
 from langgraph.prebuilt import create_react_agent
 
+from llm_factory import get_google_llm
+
 load_dotenv()
 
 # Import your tools
 from tools.linkedin_search_tool import search_linkedin_jobs
 from tools.naukri_search_tool import search_naukri_jobs
+from tools.indeed_search_tool import search_indeed_jobs
 from tools.company_research_tool import research_company
 from tools.application_tracker_tool import save_jobs_to_notion
 
 SEARCH_ANALYTICS_DATA: Dict[str, Any] = {
     "total_searches": 0,
-    "platform_usage": {"linkedin": 0, "naukri": 0},
+    "platform_usage": {"linkedin": 0, "naukri": 0, "indeed": 0},
     "successful_searches": 0,
     "failed_searches": 0,
 }
@@ -46,25 +49,46 @@ def _run_linkedin_search_sync(query: str):
         return asyncio.run(search_linkedin_jobs(query))
 
 
+def _run_indeed_search_sync(query: str):
+    """Synchronous wrapper that parses 'role, location' and calls search_indeed_jobs."""
+    try:
+        role, location = [item.strip() for item in query.split(',')]
+    except ValueError:
+        return "Input error: Please provide the input as 'role, location'."
+    return search_indeed_jobs(role, location)
+
+
 async def _parallel_job_search(query: str) -> Dict[str, Any]:
     """
-    Runs LinkedIn (async HTTP) and Naukri (Selenium) job searches in parallel.
+    Runs LinkedIn, Naukri, and Indeed job searches in parallel.
 
-    This function is used behind a synchronous LangChain tool wrapper so that the
-    agent can take advantage of concurrency without requiring an async agent
-    pipeline end-to-end.
+    LinkedIn runs as an async task; Naukri and Indeed run in worker threads
+    since they are synchronous (API calls via requests).
     """
-    # Run LinkedIn search as an async task and Naukri search in a worker thread.
     linkedin_task = asyncio.create_task(search_linkedin_jobs(query))
     naukri_task = asyncio.to_thread(search_naukri_jobs, query)
 
-    linkedin_result, naukri_result = await asyncio.gather(
-        linkedin_task, naukri_task, return_exceptions=True
+    try:
+        role, location = [item.strip() for item in query.split(',')]
+    except ValueError:
+        role, location = query, ""
+
+    async def delayed_indeed():
+        await asyncio.sleep(0.5)
+        return await asyncio.to_thread(search_indeed_jobs, role, location)
+
+    indeed_task = asyncio.create_task(delayed_indeed())
+
+    linkedin_result, naukri_result, indeed_result = await asyncio.gather(
+        linkedin_task, naukri_task, indeed_task, return_exceptions=True
     )
 
-    results: Dict[str, Any] = {"linkedin": linkedin_result, "naukri": naukri_result}
+    results: Dict[str, Any] = {
+        "linkedin": linkedin_result,
+        "naukri": naukri_result,
+        "indeed": indeed_result,
+    }
 
-    # Increment simple analytics counters defensively
     for platform, result in results.items():
         if isinstance(result, list) and result:
             SEARCH_ANALYTICS_DATA["platform_usage"][platform] += 1
@@ -76,32 +100,29 @@ def parallel_job_search(query: str) -> Dict[str, Any]:
     """
     Synchronous wrapper around `_parallel_job_search` for use as a LangChain tool.
 
-    This allows the agent to trigger concurrent LinkedIn + Naukri searches while
-    exposing a simple blocking function signature.
+    This allows the agent to trigger concurrent LinkedIn + Naukri + Indeed searches
+    while exposing a simple blocking function signature.
     """
     try:
-        # LangChain tools are typically executed in a synchronous context, so we can
-        # safely drive the async coroutine with asyncio.run here.
-        # Handle the case where an event loop is already running
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
 
         if loop is not None:
-            # If a loop is already running, use it directly
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 return executor.submit(asyncio.run, _parallel_job_search(query)).result()
         else:
-            # No loop running, we can use asyncio.run directly
             return asyncio.run(_parallel_job_search(query))
     except Exception as e:
         logger.error(f"Parallel job search failed: {e}", exc_info=True)
         return {
             "linkedin": f"Error during LinkedIn search: {e}",
             "naukri": f"Error during Naukri search: {e}",
+            "indeed": f"Error during Indeed search: {e}",
         }
+
 
 def create_job_agent() -> Any:
     """Creates and returns the job search agent as a runnable.
@@ -112,48 +133,7 @@ def create_job_agent() -> Any:
     """
     load_dotenv()
 
-    # Try multiple model options with fallback
-    # Updated to use models actually available for your API key
-    models_to_try = [
-        "gemini-2.5-flash",      # Latest fast model
-        "gemini-2.0-flash",      # Stable and fast
-        "gemini-flash-latest",   # Alias for latest flash
-        "gemini-pro-latest",     # Pro model alias
-    ]
-
-    llm = None
-    last_error = None
-
-    for model_name in models_to_try:
-        try:
-            logger.info(f"Attempting to initialize {model_name}...")
-            candidate_llm = ChatGoogleGenerativeAI(
-                model=model_name,
-                temperature=0.0,
-                convert_system_message_to_human=True,
-                timeout=30,
-                max_retries=2
-            )
-
-            # Test the model with a simple invocation
-            logger.info(f"Testing {model_name} with a simple invocation...")
-            test_response = candidate_llm.invoke("Say 'OK'")
-
-            llm = candidate_llm
-            logger.info(f"Successfully initialized and tested {model_name}. Using it.")
-            break
-        except Exception as e:
-            last_error = e
-            logger.warning(f"Failed to initialize {model_name}: {str(e)[:100]}")
-            continue
-
-    if llm is None:
-        logger.error(f"Could not initialize any model. Last error: {last_error}")
-        raise ValueError(
-            f"Failed to initialize Google AI. All models unavailable: {models_to_try}. "
-            f"Last error: {last_error}. "
-            f"Check your GOOGLE_API_KEY at https://ai.google.dev/"
-        )
+    llm = get_google_llm(temperature=0.0)
 
     tools = [
         Tool(
@@ -172,11 +152,22 @@ def create_job_agent() -> Any:
             name="naukri_job_search",
             func=search_naukri_jobs,
             description=(
-                "Search for jobs on Naukri.com using Selenium. "
+                "Search for jobs on Naukri.com (India-focused). "
                 "Input must be a comma-separated string in the form 'role, location', "
                 "for example: 'Data Scientist, Bengaluru'. "
-                "Returns either a list of job dictionaries with title, company, and url, "
-                "or an error message string if no jobs are found or the site blocks/changes its structure."
+                "Returns either a list of job dictionaries with title, company, url, and location, "
+                "or an error message string if no jobs are found."
+            ),
+        ),
+        Tool(
+            name="indeed_job_search",
+            func=_run_indeed_search_sync,
+            description=(
+                "Search for jobs on Indeed. "
+                "Input must be a comma-separated string in the form 'role, location', "
+                "for example: 'Backend Engineer, Mumbai'. "
+                "Returns either a list of job dictionaries with title, company, url, and location, "
+                "or an error message string if no jobs are found."
             ),
         ),
         Tool(
@@ -212,26 +203,39 @@ def create_job_agent() -> Any:
             name="parallel_job_search",
             func=parallel_job_search,
             description=(
-                "Run LinkedIn and Naukri job searches in parallel for faster results. "
+                "Run LinkedIn, Naukri, and Indeed job searches in parallel for faster results. "
                 "Input must be a comma-separated string in the form 'role, location', "
                 "for example: 'Backend Engineer, Remote'. "
-                "Returns a dictionary with two keys: 'linkedin' and 'naukri', "
+                "Returns a dictionary with three keys: 'linkedin', 'naukri', and 'indeed', "
                 "each containing either a list of job dictionaries or an error message string."
             ),
         ),
     ]
 
-    # Create system prompt for the agent
     system_prompt = (
         "You are a helpful job search assistant. You help users find job opportunities "
         "on various platforms, research companies, and track job applications. "
-        "Use the available tools to search for jobs, research companies, and save applications. "
-        "Always be helpful and provide clear, actionable information. "
-        "When searching for jobs, try to understand the user's requirements and use appropriate search tools."
+        "\n\nIMPORTANT FORMATTING RULES FOR JOB RESULTS:\n"
+        "When presenting job search results, ALWAYS format them as follows:\n"
+        "- Use numbered list format: 1. **Title** at Company\n"
+        "- On the next line, include: **URL:** https://...\n"
+        "- Include location and job type information\n"
+        "NEVER omit the URL - it is critical for the UI to show save buttons.\n"
+        "Example format:\n"
+        "1. **Senior Python Developer** at PayPal\n"
+        "   **URL:** https://linkedin.com/jobs/view/123\n"
+        "   Location: Bangalore, India\n"
+        "\n\nIMPORTANT BEHAVIOR:\n"
+        "When the user asks you to save jobs to Notion:\n"
+        "1. DO NOT ask the user to re-provide job details you already found.\n"
+        "2. DIRECTLY use the application_tracker tool with the job details from your search results.\n"
+        "3. For each job you want to save, call the application_tracker with JSON like:\n"
+        "   [{\"title\": \"Job Title\", \"company\": \"Company Name\", \"url\": \"https://...\"}]\n"
+        "4. Report back to the user that the jobs have been saved.\n"
+        "\nAlways extract job information (title, company, URL) from search results you just provided, "
+        "and use the application_tracker tool directly to save them. Never ask users to re-enter information you already have."
     )
 
-    # Create agent using langgraph's create_react_agent
-    # This returns a compiled graph that can be invoked directly with {"messages": [...]}
     agent = create_react_agent(llm, tools, prompt=system_prompt)
-    
+
     return agent

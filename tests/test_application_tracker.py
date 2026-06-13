@@ -91,7 +91,6 @@ class TestSaveJobsToNotion:
 
         save_jobs_to_notion(jobs_json)
 
-        # Verify that hyphens were removed from database_id
         call_args = mock_instance.pages.create.call_args
         assert call_args is not None
         database_id_sent = call_args[1]['parent']['database_id']
@@ -103,8 +102,8 @@ class TestSaveJobsToNotion:
     def test_missing_job_fields(self, mock_client):
         """Test handling of jobs with missing optional fields."""
         jobs = [
-            {"title": "Job", "company": "Company"},  # Missing URL
-            {"title": "Job2"},  # Missing company and URL
+            {"title": "Job", "company": "Company"},
+            {"title": "Job2"},
         ]
         jobs_json = json.dumps(jobs)
 
@@ -113,7 +112,6 @@ class TestSaveJobsToNotion:
 
         result = save_jobs_to_notion(jobs_json)
 
-        # Should handle gracefully with default values (N/A or #)
         assert "Successfully saved" in result or "Saved" in result
         assert mock_instance.pages.create.call_count == 2
 

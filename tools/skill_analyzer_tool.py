@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Final
 
 from newspaper import Article, ArticleException
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
+from llm_factory import get_google_llm
 
 logger = logging.getLogger(__name__)
 
@@ -29,23 +29,19 @@ def _truncate_text_for_analysis(text: str, max_chars: int = MAX_ANALYSIS_CHARS) 
     snippets: list[str] = []
     headings = ["summary", "experience", "work experience", "skills", "core skills"]
 
-    # 1) Try to capture key sections by headings.
     for heading in headings:
         idx = lowered.find(heading)
         if idx != -1:
-            # Capture a window of text around the heading.
             start = max(0, idx - max_chars // 4)
             end = min(len(text), idx + max_chars // 2)
             snippets.append(text[start:end])
 
-    # 2) Try to capture lines mentioning the last ~5 years of experience.
     try:
         year_pattern = re.compile(r"(?:19|20)\d{2}")
         all_years = [int(y) for y in year_pattern.findall(text)]
         if all_years:
             current_year = datetime.now().year
             latest_year = max(all_years)
-            # Limit to roughly the last 5 years relative to the latest year we see.
             cutoff_year = max(latest_year - 5, current_year - 10)
 
             lines = text.splitlines()
@@ -58,14 +54,13 @@ def _truncate_text_for_analysis(text: str, max_chars: int = MAX_ANALYSIS_CHARS) 
             if recent_lines:
                 recent_block = "\n".join(recent_lines)
                 snippets.append(recent_block)
-    except Exception:  # pragma: no cover - best-effort heuristic
+    except Exception:
         pass
 
     if snippets:
         combined = "\n\n".join(snippets)
         return combined[:max_chars]
 
-    # Fallback: just take the first max_chars characters.
     return text[:max_chars]
 
 
@@ -85,7 +80,6 @@ def analyze_skill_gap(resume_text: str, job_url: str) -> str:
     if not resume_text or not job_url:
         return "Error: Both a resume and a job URL are required for analysis."
 
-    # --- 1. Scrape the Job Description ---
     try:
         article = Article(job_url)
         article.download()
@@ -101,38 +95,15 @@ def analyze_skill_gap(resume_text: str, job_url: str) -> str:
         logger.error(f"An unexpected error occurred during scraping: {e}", exc_info=True)
         return "An unexpected error occurred while fetching the job description."
 
-    # --- 2. Truncate inputs to manage token usage ---
     resume_snippet = _truncate_text_for_analysis(resume_text)
     job_description_snippet = _truncate_text_for_analysis(job_description_text)
 
-    # --- 3. Use LLM to perform the analysis ---
     try:
-        # Try multiple models with fallback
-        # Updated to use models actually available for your API key
-        models_to_try = [
-            "gemini-2.5-flash",      # Latest fast model
-            "gemini-2.0-flash",      # Stable and fast
-            "gemini-flash-latest",   # Alias for latest flash
-        ]
-
-        llm = None
-        for model_name in models_to_try:
-            try:
-                logger.info(f"Trying model: {model_name} for skill analysis")
-                candidate_llm = ChatGoogleGenerativeAI(model=model_name, temperature=0.1)
-
-                # Test the model with a simple invocation
-                test_response = candidate_llm.invoke("Test")
-
-                llm = candidate_llm
-                logger.info(f"Model {model_name} works! Using it for analysis.")
-                break
-            except Exception as e:
-                logger.warning(f"Model {model_name} failed for analysis: {str(e)[:80]}")
-                continue
-
-        if llm is None:
-            return "Error: No available AI models for skill analysis. Check your GOOGLE_API_KEY."
+        try:
+            llm = get_google_llm(temperature=0.1)
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM: {e}")
+            return "Error: Could not initialize AI model for skill analysis. Check your GOOGLE_API_KEY."
 
         analysis_prompt = PromptTemplate.from_template(
             """

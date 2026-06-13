@@ -1,4 +1,4 @@
-.PHONY: help install test test-cov test-fast test-async clean lint format run deps-check deploy
+.PHONY: help install test test-cov test-fast test-async smoke-test clean lint format run deps-check docker-build docker-run
 
 help:
 	@echo "AI Job Search Agent - Development Commands"
@@ -21,7 +21,7 @@ help:
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build    - Build Docker image"
-	@echo "  make docker-run      - Run Docker container"
+	@echo "  make docker-run      - Run Docker container locally"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean           - Clean up generated files and cache"
@@ -73,13 +73,6 @@ docker-build:
 	docker build -t job-search-agent:latest .
 
 docker-run:
-	docker run -p 8501:8501 \
-		-e OPENAI_API_KEY=$${OPENAI_API_KEY} \
-		-e SERPAPI_API_KEY=$${SERPAPI_API_KEY} \
-		-e GOOGLE_API_KEY=$${GOOGLE_API_KEY} \
-		-e NOTION_API_TOKEN=$${NOTION_API_TOKEN} \
-		-e NOTION_DATABASE_ID=$${NOTION_DATABASE_ID} \
-		-e ASSEMBLYAI_API_KEY=$${ASSEMBLYAI_API_KEY} \
-		job-search-agent:latest
+	docker run -p 8501:8501 --env-file .env job-search-agent:latest
 
 .DEFAULT_GOAL := help

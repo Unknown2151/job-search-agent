@@ -1,45 +1,25 @@
+# Use a lightweight Python 3.11 image (No Chrome needed!)
 FROM python:3.11-slim
 
-# Install system dependencies for Chrome, ChromeDriver, and Selenium
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    unzip \
-    curl \
-    libgconf-2-4 \
-    libnss3 \
-    libxss1 \
-    libasound2 \
-    fonts-liberation \
-    libappindicator3-1 \
-    xdg-utils \
-    --no-install-recommends \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' \
-    && apt-get update && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install ChromeDriver compatible with the installed Chrome version
-RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1) && \
-    echo "Detected Chrome major version: ${CHROME_VERSION}" && \
-    wget -q -O /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROME_VERSION}.0.0.0/linux64/chromedriver-linux64.zip" || \
-    wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}.0.0.0/linux64/chromedriver-linux64.zip" && \
-    unzip /tmp/chromedriver.zip -d /tmp/chromedriver && \
-    mv /tmp/chromedriver/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/local/bin/chromedriver && \
-    rm -rf /tmp/chromedriver /tmp/chromedriver.zip
-
-ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
-
+# Set the working directory inside the container
 WORKDIR /app
 
-# Leverage Docker cache for requirements
+# Install basic system dependencies (needed for compiling Python packages like PyPDF2/pandas)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Leverage Docker cache by copying requirements first
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy the rest of the application code
 COPY . .
 
+# Expose the port Streamlit uses
 EXPOSE 8501
 
+# Command to run the application
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

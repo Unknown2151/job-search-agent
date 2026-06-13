@@ -1,11 +1,148 @@
 """
-Unit tests for search tools with network error handling.
-Tests resilience to network failures and malformed responses.
+Unit tests for search tools with the JSearch API backend.
+Tests resilience to API failures and correct result parsing.
 """
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 import aiohttp
-import asyncio
+
+
+
+class TestJSearchApiTool:
+    """Test suite for the core JSearch API client."""
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_jsearch_success(self, mock_get):
+        """Test successful API response parsing."""
+        from tools.jsearch_api_tool import search_jobs_api
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Python Developer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/apply",
+                        "job_city": "Chennai",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_jobs_api("Python Developer", location="Chennai")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["title"] == "Python Developer"
+        assert result[0]["company"] == "TechCorp"
+        assert result[0]["url"] == "https://example.com/apply"
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_jsearch_empty_results(self, mock_get):
+        """Test handling when API returns no jobs."""
+        from tools.jsearch_api_tool import search_jobs_api
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"data": []},
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_jobs_api("NonexistentRole", location="Nowhere")
+
+        assert isinstance(result, str)
+        assert "no jobs" in result.lower()
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_jsearch_http_error(self, mock_get):
+        """Test handling of HTTP errors."""
+        import requests as req_lib
+        from tools.jsearch_api_tool import search_jobs_api
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.raise_for_status.side_effect = req_lib.exceptions.HTTPError(
+            response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        result = search_jobs_api("Developer", location="Mumbai")
+
+        assert isinstance(result, str)
+        assert "rate limit" in result.lower() or "error" in result.lower()
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": ""}, clear=False)
+    def test_jsearch_missing_api_key(self):
+        """Test graceful error when API key is missing."""
+        from tools.jsearch_api_tool import search_jobs_api
+
+        result = search_jobs_api("Developer", location="Delhi")
+
+        assert isinstance(result, str)
+        assert "rapidapi_key" in result.lower() or "key" in result.lower()
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_jsearch_platform_label(self, mock_get):
+        """Test that platform_label is correctly applied."""
+        from tools.jsearch_api_tool import search_jobs_api
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Engineer",
+                        "employer_name": "Corp",
+                        "job_apply_link": "https://example.com",
+                        "job_city": "Pune",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_jobs_api("Engineer", platform_label="Naukri.com")
+
+        assert isinstance(result, list)
+        assert result[0]["platform"] == "Naukri.com"
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_jsearch_job_type_extraction(self, mock_get):
+        """Test that job_type is correctly extracted from API response."""
+        from tools.jsearch_api_tool import search_jobs_api
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Intern - Python Developer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/apply",
+                        "job_city": "Chennai",
+                        "job_employment_type": "Internship",
+                        "job_description": "Junior developer internship",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_jobs_api("Python Intern", location="Chennai")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["job_type"] == "Internship"
+        assert "description" in result[0]
+        assert result[0]["description"] == "Junior developer internship"
+
 
 
 class TestLinkedInSearchTool:
@@ -78,56 +215,52 @@ class TestLinkedInSearchTool:
         assert "error" in result.lower() or "input" in result.lower()
 
 
-class TestNaukriSearchTool:
-    """Test suite for Naukri job search."""
 
-    @patch('tools.naukri_search_tool._create_webdriver')
-    def test_naukri_success(self, mock_driver_factory):
+class TestNaukriSearchTool:
+    """Test suite for Naukri job search (JSearch API backend)."""
+
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_naukri_success(self, mock_get):
         """Test successful Naukri job search."""
         from tools.naukri_search_tool import search_naukri_jobs
 
-        mock_driver = MagicMock()
-        mock_driver.page_source = """
-        <div class="srp-jobtuple-wrapper">
-            <a class="title" href="https://example.com/job1">Python Developer</a>
-            <a class="comp-name">TechCorp</a>
-        </div>
-        """
-        mock_driver_factory.return_value = mock_driver
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Python Developer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/job1",
+                        "job_city": "Bangalore",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
 
         result = search_naukri_jobs("Python Developer, Bangalore")
 
         assert isinstance(result, (list, str))
-        mock_driver.quit.assert_called_once()
+        if isinstance(result, list):
+            assert result[0]["platform"] == "Naukri.com"
 
-    @patch('tools.naukri_search_tool._create_webdriver')
-    def test_naukri_no_jobs_found(self, mock_driver_factory):
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_naukri_no_jobs_found(self, mock_get):
         """Test Naukri with no jobs found."""
         from tools.naukri_search_tool import search_naukri_jobs
 
-        mock_driver = MagicMock()
-        mock_driver.page_source = "<html><body>No jobs</body></html>"
-        mock_driver_factory.return_value = mock_driver
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"data": []},
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
 
         result = search_naukri_jobs("UnicornRole, UnknownCity")
 
         assert isinstance(result, str)
         assert "no jobs" in result.lower()
-        mock_driver.quit.assert_called_once()
-
-    @patch('tools.naukri_search_tool._create_webdriver')
-    def test_naukri_driver_cleanup(self, mock_driver_factory):
-        """Test that WebDriver is properly closed even on error."""
-        from tools.naukri_search_tool import search_naukri_jobs
-
-        mock_driver = MagicMock()
-        mock_driver.get.side_effect = Exception("Connection error")
-        mock_driver_factory.return_value = mock_driver
-
-        result = search_naukri_jobs("Python Developer, Bangalore")
-
-        assert isinstance(result, str)
-        mock_driver.quit.assert_called_once()
 
     def test_naukri_invalid_input_format(self):
         """Test Naukri with invalid input format."""
@@ -137,6 +270,194 @@ class TestNaukriSearchTool:
 
         assert isinstance(result, str)
         assert "error" in result.lower() or "input" in result.lower()
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_naukri_internship_filter(self, mock_get):
+        """Test Naukri internship filtering."""
+        from tools.naukri_search_tool import search_naukri_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Python Developer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/job1",
+                        "job_city": "Bangalore",
+                        "job_employment_type": "INTERNSHIP",
+                    },
+                    {
+                        "job_title": "Python Developer",
+                        "employer_name": "DataCorp",
+                        "job_apply_link": "https://example.com/job2",
+                        "job_city": "Bangalore",
+                        "job_employment_type": "FULL_TIME",
+                    },
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_naukri_jobs("Python Developer, Bangalore", job_type="internship")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "INTERNSHIP" in result[0]["job_type"]
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_naukri_no_internships_found(self, mock_get):
+        """Test Naukri when no internships are available for the query."""
+        from tools.naukri_search_tool import search_naukri_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Senior Developer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/job1",
+                        "job_city": "Bangalore",
+                        "job_employment_type": "FULL_TIME",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_naukri_jobs("Developer, Bangalore", job_type="internship")
+
+        assert isinstance(result, str)
+        assert "no" in result.lower() and "internship" in result.lower()
+
+
+
+class TestIndeedSearchTool:
+    """Test suite for Indeed job search (JSearch API backend)."""
+
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_indeed_success(self, mock_get):
+        """Test successful Indeed job search."""
+        from tools.indeed_search_tool import search_indeed_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Data Analyst",
+                        "employer_name": "DataCo",
+                        "job_apply_link": "https://example.com/apply",
+                        "job_city": "Mumbai",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_indeed_jobs("Data Analyst", "Mumbai")
+
+        assert isinstance(result, (list, str))
+        if isinstance(result, list):
+            assert result[0]["platform"] == "Indeed"
+            assert result[0]["title"] == "Data Analyst"
+
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_indeed_no_location(self, mock_get):
+        """Test Indeed search without specifying location."""
+        from tools.indeed_search_tool import search_indeed_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Remote Engineer",
+                        "employer_name": "RemoteCo",
+                        "job_apply_link": "https://example.com",
+                        "job_city": "",
+                    }
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_indeed_jobs("Remote Engineer")
+
+        assert isinstance(result, (list, str))
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_indeed_internship_filter(self, mock_get):
+        """Test Indeed internship filtering."""
+        from tools.indeed_search_tool import search_indeed_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Data Analyst",
+                        "employer_name": "DataCo",
+                        "job_apply_link": "https://example.com/apply1",
+                        "job_city": "Mumbai",
+                        "job_employment_type": "INTERNSHIP",
+                    },
+                    {
+                        "job_title": "Data Analyst",
+                        "employer_name": "AnalyticsCorp",
+                        "job_apply_link": "https://example.com/apply2",
+                        "job_city": "Mumbai",
+                        "job_employment_type": "FULL_TIME",
+                    },
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_indeed_jobs("Data Analyst", "Mumbai", job_type="internship")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "INTERNSHIP" in result[0]["job_type"]
+
+    @patch.dict("os.environ", {"RAPIDAPI_KEY": "test-key"}, clear=False)
+    @patch("tools.jsearch_api_tool.requests.get")
+    def test_indeed_full_time_filter(self, mock_get):
+        """Test Indeed full-time job filtering."""
+        from tools.indeed_search_tool import search_indeed_jobs
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "job_title": "Engineer",
+                        "employer_name": "TechCorp",
+                        "job_apply_link": "https://example.com/apply1",
+                        "job_city": "Bengaluru",
+                        "job_employment_type": "INTERNSHIP",
+                    },
+                    {
+                        "job_title": "Engineer",
+                        "employer_name": "MegaCorp",
+                        "job_apply_link": "https://example.com/apply2",
+                        "job_city": "Bengaluru",
+                        "job_employment_type": "FULL_TIME",
+                    },
+                ]
+            },
+        )
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        result = search_indeed_jobs("Engineer", "Bengaluru", job_type="full-time")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "FULL_TIME" in result[0]["job_type"]
 
 
 if __name__ == "__main__":

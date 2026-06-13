@@ -16,12 +16,11 @@ USER_AGENTS: list[str] = [
 
 
 JOB_CARD_SELECTORS: list[tuple[str, str]] = [
-    ("div", "base-card"),                         # current primary card container
-    ("li", "jobs-search-results__list-item"),     # list items in some layouts
-    ("div", "job-search-card"),                   # generic job card container
+    ("div", "base-card"),
+    ("li", "jobs-search-results__list-item"),
+    ("div", "job-search-card"),
 ]
 
-# Retry configuration for LinkedIn searches
 LINKEDIN_RETRY_CONFIG = RetryConfig(
     max_attempts=3,
     initial_delay=2.0,

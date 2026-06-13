@@ -53,24 +53,19 @@ def configure_logging(use_json: bool = False) -> None:
     root_logger = logging.getLogger()
 
     if root_logger.handlers:
-        # Logging is already configured by the hosting environment or framework.
         return
 
-    # Create console handler
     console_handler = logging.StreamHandler()
 
     if use_json:
-        # Use JSON formatter for structured logging
         formatter = JsonFormatter()
     else:
-        # Use standard text formatter
         formatter = logging.Formatter(LOG_FORMAT)
 
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
     root_logger.setLevel(LOG_LEVEL)
 
-    # Log startup
     root_logger.info(f"Logging configured. JSON mode: {use_json}")
 
 
@@ -79,9 +74,11 @@ def configure_logging(use_json: bool = False) -> None:
 MAX_JOBS_PER_PLATFORM: Final[int] = 10
 DEFAULT_HTTP_TIMEOUT_SECONDS: Final[int] = 10
 
-# --- Selenium / Naukri-specific ---------------------------------------------
+# --- JSearch API (RapidAPI) --------------------------------------------------
 
-SELENIUM_DEFAULT_WAIT_SECONDS: Final[int] = 10
+JSEARCH_API_URL: Final[str] = "https://jsearch.p.rapidapi.com/search"
+JSEARCH_DEFAULT_COUNTRY: Final[str] = "in"
+JSEARCH_MAX_RESULTS: Final[int] = 10
 
 # --- Monitoring & Alerts -----------------------------------------------------
 

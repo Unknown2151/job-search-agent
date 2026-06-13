@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+job_agent_langgraph.db
+*.db
+.git/
+.pytest_cache/
