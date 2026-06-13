@@ -7,10 +7,6 @@
 
 A full-stack, asynchronous multi-agent system designed to automate the job search pipeline. It features concurrent web scraping, persistent conversational memory, AI-driven skill gap analysis, and real-time CRM syncing.
 
-> **[Watch the 2-Minute Loom Demo Here](INSERT_LOOM_LINK)**
->
-> **[Try the Live Application Here](INSERT_RAILWAY_LINK)**
-
 ---
 
 ## ️ Architecture & Engineering Highlights
@@ -69,7 +65,7 @@ This project was built to demonstrate scalable backend engineering patterns, API
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/job-search-agent.git
+git clone https://github.com/Unknown2151job-search-agent.git
 cd job-search-agent
 ```
 
